@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memguard_Riffnel"
+version = "0.1.1"
+description = "State Firewall for AI Agent Memory — detect and block memory poisoning, privilege escalation, and semantic drift attacks. LLM-free, sub-5ms latency."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "SafePatch Team"},
+]
+keywords = [
+    "ai-safety", "agent-security", "memory-poisoning", "state-firewall",
+    "langchain", "llm", "multi-agent", "provenance", "integrity",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "pynacl>=1.5.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+embeddings = [
+    "sentence-transformers>=3.0.0",
+    "numpy>=1.24.0",
+]
+dev = [
+    "pytest>=8.0.0",
+]
+all = [
+    "memguard_Riffnel[embeddings,dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/patchguard/memguard"
+Documentation = "https://github.com/patchguard/memguard#quick-start"
+Issues = "https://github.com/patchguard/memguard/issues"
+
+[tool.setuptools.packages.find]
+include = ["memguard*"]
+
+[tool.setuptools]
+license-files = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

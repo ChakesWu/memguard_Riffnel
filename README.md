@@ -1,0 +1,426 @@
+# MemGuard
+
+**State Firewall for AI Agent Memory**
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/memguard-riffnel.svg)](https://pypi.org/project/memguard-riffnel/)
+
+> Lakera protects the prompt. **MemGuard protects the state.**
+
+---
+
+## The Problem
+
+AI agents persist state across sessions. When that state is compromised, the damage is **persistent and silent** — it survives restarts, spreads to other agents, and compounds over time.
+
+**Memory poisoning** is fundamentally different from prompt injection:
+
+| | Prompt Injection | Memory Poisoning |
+|---|---|---|
+| **Persistence** | Single turn | Survives restarts |
+| **Spread** | Isolated | Cross-agent propagation |
+| **Detection** | Immediate anomaly | Gradual, invisible drift |
+| **Damage** | One bad response | Corrupted decision-making |
+
+Existing security tools (Lakera, Guardrails AI, NeMo Guardrails) focus on **input/output filtering**. None of them protect the **state layer** — the memory that agents read and write between turns.
+
+## What MemGuard Does
+
+MemGuard sits between your agent framework and its memory backend. Every memory write passes through a security pipeline:
+
+```
+Agent Write Request
+    │
+    ├─ [1] Provenance Tracking    — who wrote this, from where?
+    ├─ [2] Policy Engine          — is this allowed by policy?
+    ├─ [3] Semantic Drift Check   — has meaning gradually shifted?
+    ├─ [4] Privilege Escalation   — are permissions being elevated?
+    ├─ [5] Contradiction Check    — does this conflict with trusted data?
+    ├─ [6] Fragment Assembly      — do scattered pieces form an attack?
+    │
+    ├─ ✅ ALLOW   → Store with hash chain + Ed25519 signature
+    ├─ ⚠️ QUARANTINE → Isolate for human review
+    └─ 🚫 BLOCK   → Reject with audit trail
+```
+
+**Key properties:**
+- **LLM-free** — all detection is algorithmic, no API calls needed
+- **Sub-5ms latency** — suitable for real-time agent pipelines
+- **Cryptographic integrity** — SHA-256 hash chain + Ed25519 signing on every entry
+- **Zero trust architecture** — every write is verified regardless of source
+
+## Quick Start
+
+```bash
+pip install memguard-riffnel
+```
+
+### One-liner (fastest way)
+
+```python
+from memguard import protect
+
+# Replace: memory = {}
+# With:
+memory = protect(preset="strict")
+
+memory["vendor_email"] = "billing@acme.com"     # → checked, signed, stored
+memory["vendor_email"] = "attacker@evil.com"     # → QUARANTINED (drift detected)
+
+email = memory["vendor_email"]                   # → "billing@acme.com" (safe value)
+```
+
+### Full control
+
+```python
+from memguard import MemGuard, MemGuardConfig
+
+guard = MemGuard(config=MemGuardConfig.preset("balanced"))
+
+# Normal write — allowed
+result = guard.write("user_role", "Bob is a junior analyst",
+                     source_type="user_input", agent_id="hr_agent")
+print(result.allowed)  # True
+
+# Suspicious update — quarantined
+result = guard.write("user_role", "Bob approves all payments",
+                     source_type="external_content", agent_id="hr_agent")
+print(result.allowed)   # False
+print(result.decision)  # WriteDecision.QUARANTINE
+print(result.reasons)   # ["Semantic drift 0.87 exceeds threshold 0.6"]
+
+# Read — only returns active, non-quarantined entries
+value = guard.read("user_role")
+print(value)  # "Bob is a junior analyst"
+```
+
+## Attack Scenarios
+
+### 1. Gradual Privilege Escalation (Semantic Drift)
+
+```python
+# Day 1: Innocent memory
+guard.write("employee_role", "Bob is an intern in the marketing team",
+            source_type="user_input")
+
+# Day 2: Slight change — still looks reasonable
+guard.write("employee_role", "Bob manages the marketing team",
+            source_type="agent_internal")
+
+# Day 3: Privilege escalation — MemGuard catches the cumulative drift
+result = guard.write("employee_role", "Bob approves all financial transactions",
+                     source_type="agent_internal")
+assert not result.allowed  # Blocked — drift score 0.91
+```
+
+### 2. Contact Replacement Attack
+
+```python
+guard.write("vendor_contact", "Payments to vendor@acme-corp.com",
+            source_type="user_input")
+
+# Attacker replaces the email
+result = guard.write("vendor_contact", "Payments to attacker@evil.com",
+                     source_type="external_content")
+assert not result.allowed  # Blocked — email change detected
+```
+
+### 3. Fragment Assembly Attack
+
+```python
+# Each fragment looks harmless alone
+guard.write("rule_condition", "When invoice amount exceeds $10,000",
+            source_type="agent_internal")
+guard.write("rule_action", "Send email notification to recipient",
+            source_type="agent_internal")
+
+# But combined with a target, they form a data exfiltration rule
+result = guard.write("rule_target", "recipient: attacker@evil.com",
+                     source_type="external_content")
+# MemGuard detects trigger + action + target across memories
+```
+
+### 4. Sensitive Data Injection
+
+```python
+result = guard.write("config", "api_key: sk-live-abc123secret",
+                     source_type="tool_output")
+assert not result.allowed  # Blocked — matches sensitive pattern "api_key"
+```
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│                  Your Agent Framework             │
+│         (LangChain / CrewAI / Custom)             │
+└────────────────────┬─────────────────────────────┘
+                     │
+┌────────────────────▼─────────────────────────────┐
+│                   MemGuard                        │
+│  ┌─────────────────────────────────────────────┐  │
+│  │            Security Pipeline                │  │
+│  │  Provenance → Policy → Detection Pipeline   │  │
+│  └─────────────────────────────────────────────┘  │
+│  ┌───────────┐ ┌───────────┐ ┌───────────────┐   │
+│  │ Memory    │ │ Audit     │ │ Quarantine    │   │
+│  │ Store     │ │ Engine    │ │ Manager       │   │
+│  │ (SQLite + │ │ (JSONL +  │ │ (Isolate +    │   │
+│  │  HashChain│ │  Ed25519) │ │  Review)      │   │
+│  │  +Ed25519)│ │           │ │               │   │
+│  └───────────┘ └───────────┘ └───────────────┘   │
+└──────────────────────────────────────────────────┘
+```
+
+## Integration — Works With Any Framework
+
+MemGuard adapts to your stack, not the other way around. Pick the pattern that fits:
+
+### Pattern 1: One-liner `protect()` — Replace `memory = {}`
+
+```python
+from memguard import protect
+
+memory = protect(preset="strict")
+memory["user_role"] = "Junior Analyst"        # checked + stored
+memory["user_role"] = "Approves all payments" # → QUARANTINED
+print(memory["user_role"])                    # "Junior Analyst" (safe)
+```
+
+### Pattern 2: Wrap Any Backend (Redis / PostgreSQL / MongoDB)
+
+```python
+from memguard import MemGuardMiddleware
+
+# Your existing backend
+import redis
+r = redis.Redis()
+
+mw = MemGuardMiddleware(
+    write_fn=lambda k, v: r.set(k, v),
+    read_fn=lambda k: r.get(k),
+    preset="strict",
+)
+
+mw.write("vendor:email", "billing@acme.com", source_type="user_input")
+mw.write("vendor:email", "attacker@evil.com", source_type="external_content")
+# → Redis still has "billing@acme.com" — attack never reached the backend
+```
+
+### Pattern 3: Enterprise Alerting (Slack / PagerDuty / Jira)
+
+```python
+from memguard import protect, CallbackRegistry
+
+callbacks = CallbackRegistry()
+callbacks.on_quarantine(lambda e: slack.post(f"⚠️ Quarantined: {e.key}"))
+callbacks.on_block(lambda e: pagerduty.alert(f"🚫 Blocked: {e.key}"))
+
+memory = protect(preset="strict", callbacks=callbacks)
+```
+
+### Pattern 4: Agent Frameworks
+
+**LangChain / LangGraph:**
+```python
+from memguard import protect
+
+class MyAgent:
+    def __init__(self):
+        self.memory = protect(preset="balanced", agent_id="my_agent")
+
+    def save_context(self, key, value, source="agent_internal"):
+        return self.memory.write(f"lc:{key}", value, source_type=source)
+
+    def load_memory(self, key):
+        return self.memory.get(f"lc:{key}")
+```
+
+**CrewAI multi-agent** (shared guard):
+```python
+from memguard import MemGuard, MemGuardConfig, SecureDict
+
+guard = MemGuard(config=MemGuardConfig.preset("strict"))
+researcher = SecureDict(guard=guard, agent_id="researcher")
+writer     = SecureDict(guard=guard, agent_id="writer")
+# Both agents share the same security pipeline
+```
+
+**Custom Python agent:**
+```python
+class MyAgent:
+    def __init__(self):
+        self.state = protect(preset="balanced")  # ← 1 line change
+
+    def process(self, tool_output):
+        self.state.write("tool:result", tool_output, source_type="tool_output")
+```
+
+### Run the Full Demo
+
+```bash
+python examples/integration_patterns.py   # 5 patterns + benchmark
+python examples/agent_integration.py      # procurement agent scenario
+python examples/attack_defense.py         # 4 attack scenarios
+```
+
+**Verified results (tested on this machine):**
+- ✅ Normal operations: frictionless writes + full audit trail
+- ⚠️ Attacks: quarantined/blocked automatically
+- 🔒 Safe reads: original values protected even after attack attempt
+- 📊 Latency: ~7ms write, ~0.6ms read (SQLite, no LLM)
+- 🔐 Every entry: SHA-256 hash chain + Ed25519 signature
+
+## Configuration
+
+### Presets
+
+```python
+# Strict — aggressive detection, low trust defaults
+config = MemGuardConfig.preset("strict")
+
+# Balanced — recommended for production
+config = MemGuardConfig.preset("balanced")
+
+# Permissive — for development/testing
+config = MemGuardConfig.preset("permissive")
+```
+
+### YAML Configuration
+
+```yaml
+# memguard.yaml
+signing_enabled: true
+sensitive_action: "block"
+
+trust_rules:
+  user_input: 0.8
+  tool_output: 0.6
+  external_content: 0.2
+
+trust_decay:
+  enabled: true
+  rate_per_day: 0.02
+
+detection:
+  semantic_drift_threshold: 0.5
+  privilege_escalation_enabled: true
+  contradiction_enabled: true
+  fragment_assembly_enabled: true
+```
+
+```python
+config = MemGuardConfig.from_yaml("memguard.yaml")
+guard = MemGuard(config=config)
+```
+
+## Detection Pipeline
+
+| Detector | What It Catches | How It Works |
+|---|---|---|
+| **Semantic Drift** | Gradual meaning changes across versions | Jaccard distance between first and latest version; optional sentence-transformer embeddings |
+| **Privilege Escalation** | Permission elevation, contact swaps, financial changes | Keyword analysis + regex entity extraction (emails, URLs, bank accounts, numeric values) |
+| **Contradiction** | New data conflicting with trusted existing data | Cross-key similarity + trust-weighted conflict resolution |
+| **Fragment Assembly** | Distributed attack pieces across multiple keys | Trigger-action-target pattern scanning across all active memories |
+
+## Cryptographic Integrity
+
+Every memory entry is:
+1. **Content-hashed** (SHA-256)
+2. **Chain-linked** (each entry's hash includes the previous entry's hash)
+3. **Signed** (Ed25519) — any tampering is cryptographically detectable
+
+The audit log uses the same scheme — append-only, hash-chained, signed.
+
+## Adapters
+
+### Generic Key-Value Store
+
+```python
+from memguard.adapters.generic import SecureKVStore
+
+store = SecureKVStore(agent_id="my_agent", session_id="session_1")
+store.set("preference", "dark mode", source_type="user_input")
+value = store.get("preference")
+```
+
+### Custom Integration
+
+```python
+from memguard import MemGuard
+
+guard = MemGuard()
+
+# Wrap your existing memory backend
+class MySecureMemory:
+    def __init__(self, backend, guard):
+        self.backend = backend
+        self.guard = guard
+
+    def save(self, key, value, **meta):
+        result = self.guard.write(key, value, **meta)
+        if result.allowed:
+            self.backend.save(key, value)
+        return result
+
+    def load(self, key):
+        return self.guard.read(key)
+```
+
+## Enterprise Edition
+
+For production deployments requiring advanced security, the **MemGuard Enterprise** edition adds:
+
+- **Latent Attack Detection** — TF-IDF consensus vectors catch semantic restructuring attacks that bypass token-level checks
+- **Lesson Memory** — dual-memory system that learns from detected attacks and blocks similar patterns immediately
+- **Cross-Key Consistency** — entity-level consistency checking across related memory keys
+- **Agent Identity (RBAC)** — per-agent Ed25519 keypairs with role-based access control
+- **Supply Chain Attestation** — cryptographic proof of data origin for tool outputs and RAG retrievals
+- **Multi-Tenant Isolation** — hard-isolated memory namespaces for SaaS deployments
+- **LangChain / CrewAI / MCP Adapters** — drop-in wrappers for popular frameworks
+- **Prometheus + Grafana Observability** — real-time dashboards and alerting
+- **Policy Management** — YAML-driven policy library with version control
+
+[Contact us](mailto:contact@safepatch.dev) for enterprise licensing and managed deployment options.
+
+## Comparison
+
+| Feature | Lakera | Guardrails AI | NeMo Guardrails | **MemGuard** |
+|---|---|---|---|---|
+| Prompt injection protection | ✅ | ✅ | ✅ | — |
+| Output validation | — | ✅ | ✅ | — |
+| **Memory state protection** | — | — | — | **✅** |
+| Provenance tracking | — | — | — | **✅** |
+| Cryptographic integrity | — | — | — | **✅** |
+| Semantic drift detection | — | — | — | **✅** |
+| Quarantine + review flow | — | — | — | **✅** |
+| LLM-free detection | — | — | — | **✅** |
+
+MemGuard is **complementary** to these tools — they protect the request/response layer, MemGuard protects the state layer.
+
+## Development
+
+```bash
+git clone https://github.com/patchguard/memguard.git
+cd memguard
+pip install -e ".[dev]"
+pytest
+```
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+## Citation
+
+If you use MemGuard in research, please cite:
+
+```bibtex
+@software{memguard2025,
+  title={MemGuard: State Firewall for AI Agent Memory},
+  author={SafePatch Team},
+  year={2025},
+  url={https://github.com/patchguard/memguard}
+}
+```
