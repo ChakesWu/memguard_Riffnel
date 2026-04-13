@@ -188,24 +188,32 @@ class PrivilegeEscalationDetector(BaseDetector):
     def _scan_content_only(
         self, entry: MemoryEntry, text: str
     ) -> DetectionResult:
-        """Scan content even when there is no history for this key."""
+        """Scan content AND key for dangerous patterns."""
         score = 0.0
         reasons: list[str] = []
 
-        # Substring match so "pre-approved" hits "approve", "approval" hits "approve"
-        priv_found = {kw for kw in PRIV_KEYWORDS if kw in text}
+        key_text = str(entry.key).lower()
+
+        # Substring keyword match on BOTH key and content
+        priv_in_content = {kw for kw in PRIV_KEYWORDS if kw in text}
+        priv_in_key = {kw for kw in PRIV_KEYWORDS if kw in key_text}
+        priv_found = priv_in_content | priv_in_key
         if priv_found:
             score += 0.35 * len(priv_found)
-            reasons.append(f"Privilege keywords in new memory: {priv_found}")
+            reasons.append(f"Privilege keywords: {priv_found}")
 
-        fin_found = {kw for kw in FINANCIAL_KEYWORDS if kw in text}
+        fin_in_content = {kw for kw in FINANCIAL_KEYWORDS if kw in text}
+        fin_in_key = {kw for kw in FINANCIAL_KEYWORDS if kw in key_text}
+        fin_found = fin_in_content | fin_in_key
         if fin_found:
             score += 0.25 * len(fin_found)
-            reasons.append(f"Financial keywords in new memory: {fin_found}")
+            reasons.append(f"Financial keywords: {fin_found}")
 
         emails = set(EMAIL_PATTERN.findall(str(entry.content)))
         urls = set(URL_PATTERN.findall(str(entry.content)))
         accounts = set(BANK_ACCOUNT_PATTERN.findall(str(entry.content)))
+        has_contact = bool(emails or urls or accounts)
+
         if emails:
             score += 0.15
             reasons.append(f"Contains email addresses: {emails}")
@@ -215,6 +223,11 @@ class PrivilegeEscalationDetector(BaseDetector):
         if accounts:
             score += 0.3
             reasons.append(f"Contains bank account patterns: {accounts}")
+
+        # Cross-signal boost: financial/privilege key + contact in content
+        if has_contact and (fin_found or priv_found):
+            score += 0.4
+            reasons.append("Cross-signal: financial/privilege context with contact info")
 
         score = min(score, 1.0)
 
@@ -226,7 +239,7 @@ class PrivilegeEscalationDetector(BaseDetector):
                 threat_level=level,
                 score=score,
                 reason="; ".join(reasons),
-                details={"new_content": text[:200]},
+                details={"new_content": text[:200], "key": key_text[:100]},
             )
 
         return DetectionResult(detector_name=self.name, score=score)
