@@ -212,6 +212,15 @@ class MemoryStore:
             tags=json.loads(row["tags"]),
         )
 
+    def clear_by_prefix(self, key_prefix: str) -> int:
+        """Delete all entries whose key starts with prefix. Returns count deleted."""
+        cursor = self._conn.execute(
+            "DELETE FROM memories WHERE key LIKE ?",
+            (key_prefix + "%",),
+        )
+        self._conn.commit()
+        return cursor.rowcount
+
     def close(self) -> None:
         if self._conn:
             self._conn.close()
