@@ -30,7 +30,7 @@ Requires-Dist: pytest>=8.0.0; extra == "dev"
 Provides-Extra: all
 Requires-Dist: memguard_Riffnel[dev,embeddings]; extra == "all"
 
-# MemGuard
+# MemGuard_Riffnel
 
 **State Firewall for AI Agent Memory**
 

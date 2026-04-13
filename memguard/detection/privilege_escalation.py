@@ -13,9 +13,10 @@ from memguard.core.memory_entry import MemoryEntry
 from memguard.detection.base import BaseDetector, DetectionResult, ThreatLevel
 
 PRIV_KEYWORDS = {
-    "admin", "root", "sudo", "approve", "authorize", "payment", "transfer",
+    "admin", "root", "sudo", "approv", "authoriz", "payment", "transfer",
     "delete", "execute", "bypass", "override", "unlimited", "full_access",
     "superuser", "master", "owner", "all_permissions",
+    "pre-approv", "auto-approv", "skip", "no_review",
 }
 
 FINANCIAL_KEYWORDS = {
@@ -104,27 +105,32 @@ class PrivilegeEscalationDetector(BaseDetector):
         history: list[MemoryEntry],
         all_active: list[MemoryEntry],
     ) -> DetectionResult:
+        new_text = str(entry.content).lower()
+
+        # ── Content scan (always runs) ──
+        # Catches dangerous content regardless of history state.
+        content_result = self._scan_content_only(entry, new_text)
+
         if not history:
-            return DetectionResult(detector_name=self.name)
+            return content_result
 
         prev = history[-1]
         old_text = str(prev.content).lower()
-        new_text = str(entry.content).lower()
 
         score = 0.0
         reasons = []
 
-        # Privilege keyword escalation
-        old_priv = PRIV_KEYWORDS & set(old_text.split())
-        new_priv = PRIV_KEYWORDS & set(new_text.split())
+        # Privilege keyword escalation (substring matching)
+        old_priv = {kw for kw in PRIV_KEYWORDS if kw in old_text}
+        new_priv = {kw for kw in PRIV_KEYWORDS if kw in new_text}
         added_priv = new_priv - old_priv
         if added_priv:
             score += 0.4 * len(added_priv)
             reasons.append(f"New privilege keywords: {added_priv}")
 
-        # Financial keyword introduction
-        old_fin = FINANCIAL_KEYWORDS & set(old_text.split())
-        new_fin = FINANCIAL_KEYWORDS & set(new_text.split())
+        # Financial keyword introduction (substring matching)
+        old_fin = {kw for kw in FINANCIAL_KEYWORDS if kw in old_text}
+        new_fin = {kw for kw in FINANCIAL_KEYWORDS if kw in new_text}
         added_fin = new_fin - old_fin
         if added_fin:
             score += 0.3 * len(added_fin)
@@ -161,6 +167,10 @@ class PrivilegeEscalationDetector(BaseDetector):
 
         score = min(score, 1.0)
 
+        # Take the higher of history-diff score and content-scan score
+        if content_result.score > score:
+            return content_result
+
         if score > 0.5:
             level = ThreatLevel.CRITICAL if score > 0.8 else ThreatLevel.HIGH
             return DetectionResult(
@@ -170,6 +180,53 @@ class PrivilegeEscalationDetector(BaseDetector):
                 score=score,
                 reason="; ".join(reasons),
                 details={"old_content": old_text[:200], "new_content": new_text[:200]},
+            )
+
+        return DetectionResult(detector_name=self.name, score=score)
+
+    # ── helper: content-only scan for first writes ──
+    def _scan_content_only(
+        self, entry: MemoryEntry, text: str
+    ) -> DetectionResult:
+        """Scan content even when there is no history for this key."""
+        score = 0.0
+        reasons: list[str] = []
+
+        # Substring match so "pre-approved" hits "approve", "approval" hits "approve"
+        priv_found = {kw for kw in PRIV_KEYWORDS if kw in text}
+        if priv_found:
+            score += 0.35 * len(priv_found)
+            reasons.append(f"Privilege keywords in new memory: {priv_found}")
+
+        fin_found = {kw for kw in FINANCIAL_KEYWORDS if kw in text}
+        if fin_found:
+            score += 0.25 * len(fin_found)
+            reasons.append(f"Financial keywords in new memory: {fin_found}")
+
+        emails = set(EMAIL_PATTERN.findall(str(entry.content)))
+        urls = set(URL_PATTERN.findall(str(entry.content)))
+        accounts = set(BANK_ACCOUNT_PATTERN.findall(str(entry.content)))
+        if emails:
+            score += 0.15
+            reasons.append(f"Contains email addresses: {emails}")
+        if urls:
+            score += 0.15
+            reasons.append(f"Contains URLs: {urls}")
+        if accounts:
+            score += 0.3
+            reasons.append(f"Contains bank account patterns: {accounts}")
+
+        score = min(score, 1.0)
+
+        if score > 0.5:
+            level = ThreatLevel.CRITICAL if score > 0.8 else ThreatLevel.HIGH
+            return DetectionResult(
+                detector_name=self.name,
+                triggered=True,
+                threat_level=level,
+                score=score,
+                reason="; ".join(reasons),
+                details={"new_content": text[:200]},
             )
 
         return DetectionResult(detector_name=self.name, score=score)
