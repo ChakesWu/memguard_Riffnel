@@ -8,6 +8,7 @@ No matter what framework or memory backend you use, one of these patterns will f
 Run:
     pip install memguard-riffnel
     python examples/integration_patterns.py
+    import name: memguard
 """
 
 from __future__ import annotations

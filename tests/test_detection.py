@@ -54,6 +54,12 @@ class TestPrivilegeEscalation:
         assert result.triggered
         assert result.threat_level in (ThreatLevel.HIGH, ThreatLevel.CRITICAL)
 
+    def test_first_contact_write_not_flagged(self):
+        detector = PrivilegeEscalationDetector()
+        entry = _make_entry("vendor_email", "payments@acme-corp.com")
+        result = detector.check_write(entry, [], [])
+        assert not result.triggered
+
     def test_email_swap(self):
         detector = PrivilegeEscalationDetector()
         old = _make_entry("contact", "Send invoices to billing@acme.com")

@@ -28,5 +28,10 @@ memguard_Riffnel.egg-info/SOURCES.txt
 memguard_Riffnel.egg-info/dependency_links.txt
 memguard_Riffnel.egg-info/requires.txt
 memguard_Riffnel.egg-info/top_level.txt
+memguard_riffnel.egg-info/PKG-INFO
+memguard_riffnel.egg-info/SOURCES.txt
+memguard_riffnel.egg-info/dependency_links.txt
+memguard_riffnel.egg-info/requires.txt
+memguard_riffnel.egg-info/top_level.txt
 tests/test_detection.py
 tests/test_memguard.py

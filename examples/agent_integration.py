@@ -15,6 +15,7 @@
 執行方式：
     pip install memguard-riffnel
     python examples/agent_integration.py
+    import name: memguard
 
 預期效果：
     - 正常操作：寫入成功 + 審計記錄

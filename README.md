@@ -10,20 +10,88 @@
 
 ---
 
-## The Problem
+MemGuard is a drop-in memory security layer for AI agents. It detects memory poisoning, privilege escalation, contact replacement, and semantic drift before corrupted state reaches your memory backend.
 
-AI agents persist state across sessions. When that state is compromised, the damage is **persistent and silent** — it survives restarts, spreads to other agents, and compounds over time.
+## Install in 60 Seconds
 
-**Memory poisoning** is fundamentally different from prompt injection:
+```bash
+pip install memguard-riffnel
+```
 
-| | Prompt Injection | Memory Poisoning |
-|---|---|---|
-| **Persistence** | Single turn | Survives restarts |
-| **Spread** | Isolated | Cross-agent propagation |
-| **Detection** | Immediate anomaly | Gradual, invisible drift |
-| **Damage** | One bad response | Corrupted decision-making |
+- **Package name**: `memguard-riffnel`
+- **Import name**: `memguard`
 
-Existing security tools (Lakera, Guardrails AI, NeMo Guardrails) focus on **input/output filtering**. None of them protect the **state layer** — the memory that agents read and write between turns.
+```python
+import memguard
+print(memguard.__version__)
+```
+
+## Fastest Way to See It Work
+
+```python
+from memguard import protect
+
+memory = protect(preset="strict")
+
+memory["vendor_email"] = "billing@acme.com"
+memory.write("vendor_email", "attacker@evil.com", source_type="external_content")
+
+print(memory["vendor_email"])
+```
+
+Expected result:
+
+```text
+billing@acme.com
+```
+
+The malicious replacement is quarantined, and safe reads keep returning the last active value.
+
+## Verified Demo Path (repo checkout)
+
+If you want to run the bundled examples, clone this repository first:
+
+```bash
+git clone https://github.com/patchguard/memguard_Riffnel.git
+cd memguard_Riffnel
+pip install -e .
+python examples/quickstart.py
+```
+
+```bash
+python examples/quickstart.py
+```
+
+Expected output includes:
+
+```text
+Write allowed: True
+Read value: dark mode enabled
+Suspicious write allowed: False
+Decision: WriteDecision.QUARANTINE
+Safe value: payments@acme-corp.com
+```
+
+## Windows (PowerShell)
+
+```powershell
+py -3.10 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install memguard-riffnel
+# Use the inline snippet above for PyPI-only install.
+```
+
+## Common Setup Issues
+
+- **`ModuleNotFoundError: No module named 'memguard'`**
+  - If you are running from a source checkout, use `python examples/quickstart.py` from this repo root, or install the package into a clean virtual environment first.
+
+- **`import memguard` resolves to the wrong local module**
+  - If you are inside a larger monorepo/workspace that already contains another `memguard` package, run validation from a clean directory after installation.
+
+- **`ModuleNotFoundError: No module named 'nacl'`**
+  - The runtime dependency is provided by `pip install memguard-riffnel`. Reinstall inside a fresh virtual environment if imports were attempted before installation completed.
 
 ## What MemGuard Does
 
@@ -50,11 +118,22 @@ Agent Write Request
 - **Cryptographic integrity** — SHA-256 hash chain + Ed25519 signing on every entry
 - **Zero trust architecture** — every write is verified regardless of source
 
-## Quick Start
+## The Problem
 
-```bash
-pip install memguard-riffnel
-```
+AI agents persist state across sessions. When that state is compromised, the damage is **persistent and silent** — it survives restarts, spreads to other agents, and compounds over time.
+
+**Memory poisoning** is fundamentally different from prompt injection:
+
+| | Prompt Injection | Memory Poisoning |
+|---|---|---|
+| **Persistence** | Single turn | Survives restarts |
+| **Spread** | Isolated | Cross-agent propagation |
+| **Detection** | Immediate anomaly | Gradual, invisible drift |
+| **Damage** | One bad response | Corrupted decision-making |
+
+Existing security tools (Lakera, Guardrails AI, NeMo Guardrails) focus on **input/output filtering**. None of them protect the **state layer** — the memory that agents read and write between turns.
+
+## More Usage Patterns
 
 ### One-liner (fastest way)
 
@@ -402,8 +481,8 @@ MemGuard is **complementary** to these tools — they protect the request/respon
 ## Development
 
 ```bash
-git clone https://github.com/patchguard/memguard.git
-cd memguard
+git clone https://github.com/patchguard/memguard_Riffnel.git
+cd memguard_Riffnel
 pip install -e ".[dev]"
 pytest
 ```
@@ -421,6 +500,6 @@ If you use MemGuard in research, please cite:
   title={MemGuard: State Firewall for AI Agent Memory},
   author={SafePatch Team},
   year={2025},
-  url={https://github.com/patchguard/memguard}
+  url={https://github.com/patchguard/memguard_Riffnel}
 }
 ```

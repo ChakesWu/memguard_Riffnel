@@ -2,14 +2,25 @@
 MemGuard Quick Start — 5 minutes to secure agent memory.
 
 Run:
-    pip install memguard
+    pip install memguard-riffnel
     python examples/quickstart.py
 """
+
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from memguard import MemGuard, MemGuardConfig
 
 # Initialize with balanced preset
-guard = MemGuard(config=MemGuardConfig.preset("balanced"))
+config = MemGuardConfig.preset("balanced")
+data_dir = Path(tempfile.mkdtemp(prefix="memguard_quickstart_"))
+config.db_path = str(data_dir / "memories.db")
+config.audit_path = str(data_dir / "audit.jsonl")
+config.key_path = str(data_dir / "keys")
+guard = MemGuard(config=config)
 
 # --- Normal operations ---
 

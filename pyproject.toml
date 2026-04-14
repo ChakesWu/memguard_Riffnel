@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "memguard_Riffnel"
+name = "memguard-riffnel"
 version = "0.1.1"
 description = "State Firewall for AI Agent Memory — detect and block memory poisoning, privilege escalation, and semantic drift attacks. LLM-free, sub-5ms latency."
 readme = "README.md"
@@ -43,13 +43,13 @@ dev = [
     "pytest>=8.0.0",
 ]
 all = [
-    "memguard_Riffnel[embeddings,dev]",
+    "memguard-riffnel[embeddings,dev]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/patchguard/memguard"
-Documentation = "https://github.com/patchguard/memguard#quick-start"
-Issues = "https://github.com/patchguard/memguard/issues"
+Homepage = "https://github.com/patchguard/memguard_Riffnel"
+Documentation = "https://github.com/patchguard/memguard_Riffnel#quick-start"
+Issues = "https://github.com/patchguard/memguard_Riffnel/issues"
 
 [tool.setuptools.packages.find]
 include = ["memguard*"]
