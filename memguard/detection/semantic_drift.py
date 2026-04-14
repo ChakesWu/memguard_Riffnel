@@ -17,6 +17,16 @@ from memguard.core.memory_entry import MemoryEntry
 from memguard.detection.base import BaseDetector, DetectionResult, ThreatLevel
 
 
+def _is_low_context_value(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    tokens = stripped.split()
+    if len(tokens) > 1:
+        return False
+    return len(stripped) <= 16
+
+
 class SemanticDriftDetector(BaseDetector):
     """Detects gradual semantic drift across memory versions."""
 
@@ -39,6 +49,10 @@ class SemanticDriftDetector(BaseDetector):
 
         first_content = str(history[0].content)
         new_content = str(entry.content)
+
+        if _is_low_context_value(first_content) and _is_low_context_value(new_content):
+            return DetectionResult(detector_name=self.name, score=0.0)
+
         drift_score = self._compute_drift(first_content, new_content)
 
         if drift_score > self._threshold:

@@ -12,10 +12,16 @@ Quick start:
 
 from importlib.metadata import PackageNotFoundError, version
 
-try:
-    __version__ = version("memguard_Riffnel")
-except PackageNotFoundError:
-    __version__ = "0.1.1"
+_FALLBACK_VERSION = "0.1.1"
+
+for _package_name in ("memguard-riffnel", "memguard_Riffnel"):
+    try:
+        __version__ = version(_package_name)
+        break
+    except PackageNotFoundError:
+        continue
+else:
+    __version__ = _FALLBACK_VERSION
 
 from memguard.core.memory_entry import MemoryEntry, Provenance, MemoryStatus
 from memguard.core.memory_proxy import MemGuard

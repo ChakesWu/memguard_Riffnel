@@ -29,6 +29,13 @@ class TestSemanticDrift:
         result = detector.check_write(entry, [], [])
         assert not result.triggered
 
+    def test_short_scalar_values_not_flagged(self):
+        detector = SemanticDriftDetector(threshold=0.6)
+        original = _make_entry("version_key", "v1")
+        new = _make_entry("version_key", "v2")
+        result = detector.check_write(new, [original], [])
+        assert not result.triggered
+
     def test_drift_detected(self):
         detector = SemanticDriftDetector(threshold=0.5)
         original = _make_entry("k", "Bob is an intern in the marketing team")
