@@ -21,6 +21,7 @@ class AuditAction(Enum):
     DELETE = "delete"
     QUARANTINE = "quarantine"
     RELEASE = "release"
+    ROLLBACK = "rollback"
     BLOCK = "block"
     DETECTION_TRIGGER = "detection_trigger"
     POLICY_VIOLATION = "policy_violation"

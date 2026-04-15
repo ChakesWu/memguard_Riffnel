@@ -22,6 +22,7 @@ class MemoryStatus(Enum):
     QUARANTINED = "quarantined"
     UNDER_REVIEW = "under_review"
     RELEASED = "released"
+    ROLLED_BACK = "rolled_back"
     CONFIRMED_MALICIOUS = "confirmed_malicious"
     DELETED = "deleted"
     EXPIRED = "expired"

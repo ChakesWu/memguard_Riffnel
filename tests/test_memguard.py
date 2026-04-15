@@ -54,6 +54,25 @@ class TestBasicOperations:
         assert history[0].version == 1
         assert history[1].version == 2
 
+    def test_rollback_restores_previous_active_version(self, guard):
+        guard.write("rollback_key", "clean value", source_type="user_input")
+        guard.write("rollback_key", "poisoned value", source_type="user_input")
+
+        assert guard.read("rollback_key") == "poisoned value"
+
+        result = guard.rollback("rollback_key", reason="memory poisoning detected")
+        assert result.success
+        assert result.restored_entry is not None
+        assert result.rolled_back_entry is not None
+        assert result.restored_entry.content == "clean value"
+        assert result.rolled_back_entry.content == "poisoned value"
+        assert guard.read("rollback_key") == "clean value"
+
+        history = guard.store.get_history("rollback_key")
+        assert len(history) == 2
+        assert history[0].status.value == "active"
+        assert history[1].status.value == "rolled_back"
+
     def test_read_entry_with_provenance(self, guard):
         guard.write("prov_key", "tracked data",
                      source_type="tool_output", agent_id="agent_1",
@@ -140,6 +159,19 @@ class TestAuditTrail:
         actions = [e["action"] for e in entries]
         assert "write" in actions
         assert "read" in actions
+
+    def test_rollback_audit_entry_created(self, guard):
+        guard.write("audit_rollback", "safe", source_type="user_input")
+        guard.write("audit_rollback", "unsafe", source_type="user_input")
+
+        result = guard.rollback("audit_rollback", reason="manual rollback")
+        assert result.success
+
+        entries = guard.audit.read_all()
+        rollback_entries = [e for e in entries if e["action"] == "rollback" and e["memory_key"] == "audit_rollback"]
+        assert len(rollback_entries) == 1
+        assert rollback_entries[0]["details"]["restored_version"] == 1
+        assert rollback_entries[0]["details"]["rolled_back_version"] == 2
 
     def test_audit_chain_integrity(self, guard):
         guard.write("k1", "v1", source_type="user_input")

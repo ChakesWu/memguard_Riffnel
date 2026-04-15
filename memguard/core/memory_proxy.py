@@ -36,6 +36,24 @@ class WriteResult:
         self.reasons = reasons or []
 
 
+class RollbackResult:
+    """Result of a memory rollback operation."""
+
+    def __init__(
+        self,
+        success: bool,
+        key: str,
+        restored_entry: Optional[MemoryEntry] = None,
+        rolled_back_entry: Optional[MemoryEntry] = None,
+        reason: str = "",
+    ):
+        self.success = success
+        self.key = key
+        self.restored_entry = restored_entry
+        self.rolled_back_entry = rolled_back_entry
+        self.reason = reason
+
+
 class MemGuard:
     """Main entry point — secure memory proxy.
 
@@ -213,6 +231,41 @@ class MemGuard:
             agent_id=agent_id, session_id=session_id,
         )
         return True
+
+    def rollback(self, key: str, reason: str = "", agent_id: str = "", session_id: str = "") -> RollbackResult:
+        """Rollback a memory key to its previous active version."""
+        rolled_back_entry, restored_entry = self._store.rollback_key(key, reason)
+        if rolled_back_entry is None or restored_entry is None:
+            return RollbackResult(
+                success=False,
+                key=key,
+                reason="No previous active version available for rollback",
+            )
+
+        rollback_reason = rolled_back_entry.quarantine_reason or reason or (
+            f"rolled back to version {restored_entry.version}"
+        )
+        self._audit.log(
+            AuditAction.ROLLBACK,
+            memory_key=key,
+            memory_id=rolled_back_entry.id,
+            agent_id=agent_id,
+            session_id=session_id,
+            details={
+                "reason": rollback_reason,
+                "rolled_back_version": rolled_back_entry.version,
+                "rolled_back_entry_id": rolled_back_entry.id,
+                "restored_version": restored_entry.version,
+                "restored_entry_id": restored_entry.id,
+            },
+        )
+        return RollbackResult(
+            success=True,
+            key=key,
+            restored_entry=restored_entry,
+            rolled_back_entry=rolled_back_entry,
+            reason=rollback_reason,
+        )
 
     @property
     def quarantine(self) -> QuarantineManager:

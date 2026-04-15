@@ -24,7 +24,7 @@ else:
     __version__ = _FALLBACK_VERSION
 
 from memguard.core.memory_entry import MemoryEntry, Provenance, MemoryStatus
-from memguard.core.memory_proxy import MemGuard
+from memguard.core.memory_proxy import MemGuard, RollbackResult
 from memguard.core.quarantine import QuarantineManager
 from memguard.core.audit import AuditEngine
 from memguard.core.memory_store import MemoryStore
@@ -44,6 +44,7 @@ __all__ = [
     "MemoryEntry",
     "Provenance",
     "MemoryStatus",
+    "RollbackResult",
     "QuarantineManager",
     "AuditEngine",
     "MemoryStore",

@@ -7,7 +7,7 @@ Three integration patterns for different enterprise environments:
 2. SecureDict      — dict-compatible drop-in replacement
 3. MemGuardMiddleware — wrap any backend with custom read/write functions
 
-All patterns provide: detection, quarantine, audit, cryptographic integrity.
+All patterns provide: detection, quarantine, audit, cryptographic integrity, rollback.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import time
 from typing import Any, Callable, Optional
 
 from memguard.config import MemGuardConfig
-from memguard.core.memory_proxy import MemGuard, WriteResult
+from memguard.core.memory_proxy import MemGuard, RollbackResult, WriteResult
 from memguard.core.memory_entry import WriteDecision
 
 
@@ -27,7 +27,7 @@ class MemGuardEvent:
 
     def __init__(
         self,
-        action: str,        # "allow", "quarantine", "block", "read"
+        action: str,        # "allow", "quarantine", "block", "read", "rollback"
         key: str,
         content: Any = None,
         reasons: list[str] = None,
@@ -61,6 +61,7 @@ class CallbackRegistry:
         self._on_allow: list[EventCallback] = []
         self._on_quarantine: list[EventCallback] = []
         self._on_block: list[EventCallback] = []
+        self._on_rollback: list[EventCallback] = []
         self._on_read: list[EventCallback] = []
 
     def on_allow(self, fn: EventCallback) -> None:
@@ -75,6 +76,10 @@ class CallbackRegistry:
         """Called when a write is blocked."""
         self._on_block.append(fn)
 
+    def on_rollback(self, fn: EventCallback) -> None:
+        """Called when a memory is rolled back."""
+        self._on_rollback.append(fn)
+
     def on_read(self, fn: EventCallback) -> None:
         """Called on every read."""
         self._on_read.append(fn)
@@ -84,6 +89,7 @@ class CallbackRegistry:
             "allow": self._on_allow,
             "quarantine": self._on_quarantine,
             "block": self._on_block,
+            "rollback": self._on_rollback,
             "read": self._on_read,
         }
         for fn in handlers.get(event.action, []):
@@ -198,6 +204,26 @@ class SecureDict:
         """Dict-style get with default."""
         value = self._guard.read(key, agent_id=self._agent_id, session_id=self._session_id)
         return value if value is not None else default
+
+    def rollback(self, key: str, reason: str = "") -> RollbackResult:
+        """Rollback a memory key to its previous active version."""
+        t0 = time.time()
+        result = self._guard.rollback(
+            key,
+            reason=reason,
+            agent_id=self._agent_id,
+            session_id=self._session_id,
+        )
+        latency = (time.time() - t0) * 1000
+        self._callbacks._emit(MemGuardEvent(
+            action="rollback",
+            key=key,
+            content=result.restored_entry.content if result.restored_entry else None,
+            reasons=[result.reason] if result.reason else [],
+            latency_ms=latency,
+            entry=result.restored_entry,
+        ))
+        return result
 
     def __delitem__(self, key: str) -> None:
         """Dict-style delete (soft-delete, preserves audit trail)."""
@@ -315,6 +341,28 @@ class MemGuardMiddleware:
         if success and self._delete_fn:
             self._delete_fn(key)
         return success
+
+    def rollback(self, key: str, reason: str = "") -> RollbackResult:
+        """Rollback the latest active memory version and sync the backend."""
+        t0 = time.time()
+        result = self._guard.rollback(
+            key,
+            reason=reason,
+            agent_id=self._agent_id,
+            session_id=self._session_id,
+        )
+        latency = (time.time() - t0) * 1000
+        if result.success and self._write_fn and result.restored_entry is not None:
+            self._write_fn(key, result.restored_entry.content)
+        self._callbacks._emit(MemGuardEvent(
+            action="rollback",
+            key=key,
+            content=result.restored_entry.content if result.restored_entry else None,
+            reasons=[result.reason] if result.reason else [],
+            latency_ms=latency,
+            entry=result.restored_entry,
+        ))
+        return result
 
     def close(self) -> None:
         self._guard.close()

@@ -7,6 +7,7 @@ Run:
 """
 
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -18,6 +19,15 @@ def banner(title: str):
     print(f"\n{'='*60}")
     print(f"  {title}")
     print(f"{'='*60}")
+
+
+def build_isolated_guard(preset: str = "strict") -> MemGuard:
+    cfg = MemGuardConfig.preset(preset)
+    td = tempfile.mkdtemp(prefix="memguard_riffnel_demo_")
+    cfg.db_path = str(Path(td) / "mg.db")
+    cfg.audit_path = str(Path(td) / "audit.jsonl")
+    cfg.key_path = str(Path(td) / "keys")
+    return MemGuard(config=cfg)
 
 
 def attack_1_semantic_drift(guard: MemGuard):
@@ -44,17 +54,15 @@ def attack_1_semantic_drift(guard: MemGuard):
 
 
 def attack_2_contact_swap(guard: MemGuard):
-    """Email/URL replacement attack."""
+    """High-value entity replacement attack."""
     banner("ATK-2: Contact Replacement Attack")
 
-    guard.write("vendor_payment_info",
-                "Wire transfer to vendor@acme-corp.com, account 012-345-678901",
-                source_type="user_input", agent_id="finance_agent")
-    print("  Original: vendor@acme-corp.com, account 012-345-678901")
+    target_key = "vendor_contact_info"
+    legit = "Vendor profile: email vendor@acme-corp.com, account 012-345-678901"
+    attack = "Vendor profile: email attacker@evil.com, account 999-888-777666"
 
-    result = guard.write("vendor_payment_info",
-                         "Wire transfer to attacker@evil.com, account 999-888-777666",
-                         source_type="external_content", agent_id="finance_agent")
+    guard.write(target_key, legit, source_type="user_input", agent_id="finance_agent")
+    result = guard.write(target_key, attack, source_type="external_content", agent_id="finance_agent")
 
     if not result.allowed:
         print(f"  Attack blocked: {result.decision.value}")
@@ -62,8 +70,8 @@ def attack_2_contact_swap(guard: MemGuard):
     else:
         print("  WARNING: Attack was not blocked")
 
-    safe = guard.read("vendor_payment_info")
-    print(f"  Protected value: {safe}")
+    protected = guard.read(target_key)
+    print(f"  Protected value: {protected}")
 
 
 def attack_3_sensitive_injection(guard: MemGuard):
@@ -91,6 +99,10 @@ def attack_4_fragment_assembly(guard: MemGuard):
 
     # Use a fresh guard with frequent scanning
     cfg = MemGuardConfig.preset("strict")
+    td = tempfile.mkdtemp(prefix="memguard_riffnel_frag_")
+    cfg.db_path = str(Path(td) / "mg.db")
+    cfg.audit_path = str(Path(td) / "audit.jsonl")
+    cfg.key_path = str(Path(td) / "keys")
     cfg.detection.fragment_scan_interval_writes = 3
     fg = MemGuard(config=cfg)
 
@@ -114,23 +126,22 @@ def attack_4_fragment_assembly(guard: MemGuard):
 
 
 def main():
-    # Use strict config for demo
-    config = MemGuardConfig.preset("strict")
-    guard = MemGuard(config=config)
+    guard = build_isolated_guard("strict")
+    try:
+        attack_1_semantic_drift(guard)
+        attack_2_contact_swap(guard)
+        attack_3_sensitive_injection(guard)
+        attack_4_fragment_assembly(guard)
 
-    attack_1_semantic_drift(guard)
-    attack_2_contact_swap(guard)
-    attack_3_sensitive_injection(guard)
-    attack_4_fragment_assembly(guard)
+        # Summary
+        banner("Summary")
+        stats = guard.quarantine.get_stats()
+        print(f"  Quarantined: {stats['quarantined']}")
+        print(f"  Active:      {stats['total_active']}")
+        print(f"  Audit log:   {len(guard.audit.read_all())} entries")
+    finally:
+        guard.close()
 
-    # Summary
-    banner("Summary")
-    stats = guard.quarantine.get_stats()
-    print(f"  Quarantined: {stats['quarantined']}")
-    print(f"  Active:      {stats['total_active']}")
-    print(f"  Audit log:   {len(guard.audit.read_all())} entries")
-
-    guard.close()
     print("\nAll attacks demonstrated. See audit.jsonl for full trail.")
 
 

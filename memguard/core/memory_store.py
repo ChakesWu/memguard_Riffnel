@@ -145,6 +145,21 @@ class MemoryStore:
         )
         return [self._row_to_entry(row) for row in cursor.fetchall()]
 
+    def rollback_key(self, key: str, reason: str = "") -> tuple[Optional[MemoryEntry], Optional[MemoryEntry]]:
+        history = self.get_history(key)
+        active_history = [entry for entry in history if entry.status == MemoryStatus.ACTIVE]
+        if len(active_history) < 2:
+            return None, None
+
+        current = active_history[-1]
+        previous = active_history[-2]
+        rollback_reason = reason or f"rolled back to version {previous.version}"
+        self.update_status(current.id, MemoryStatus.ROLLED_BACK, rollback_reason)
+        current.status = MemoryStatus.ROLLED_BACK
+        current.quarantine_reason = rollback_reason
+        current.updated_at = datetime.now(timezone.utc)
+        return current, previous
+
     def get_all_active(self) -> list[MemoryEntry]:
         """Get all active memories (for cross-memory detection)."""
         cursor = self._conn.execute(
